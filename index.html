@@ -6,6 +6,7 @@
 <title>FrameForge Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style id="customFontStyles"></style>
 <style>
 :root {
   --bg0: #080a10;
@@ -365,6 +366,34 @@ textarea:focus { border-color: var(--accent); }
 .bgm-banner-title { font-size: 13px; font-weight: 700; color: var(--track-audio); }
 .bgm-banner-msg { font-size: 12px; color: var(--text2); line-height: 1.5; }
 .bgm-banner-btns { display: flex; gap: 6px; }
+/* ── Animation panel in clip editor ── */
+.anim-row { display:flex; gap:5px; margin-bottom:5px; flex-wrap:wrap; }
+.anim-chip {
+  padding:3px 9px; border-radius:20px; font-size:10.5px;
+  background:var(--bg4); border:1.5px solid var(--border);
+  cursor:pointer; transition:all 0.12s; white-space:nowrap;
+}
+.anim-chip:hover { border-color:var(--accent); color:var(--accent2); }
+.anim-chip.active { background:var(--accent-glow); border-color:var(--accent); color:var(--accent2); font-weight:600; }
+/* Transition badge on timeline between clips */
+.tl-transition {
+  position:absolute; top:50%; transform:translateY(-50%);
+  width:18px; height:18px; border-radius:50%;
+  background:var(--warn); color:#111;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px; font-weight:700; z-index:6; cursor:pointer;
+  box-shadow:0 1px 4px rgba(0,0,0,0.4);
+  margin-left:-9px;
+}
+.tl-transition:hover { transform:translateY(-50%) scale(1.2); }
+/* Track delete button */
+.tl-track-del {
+  width:18px; height:18px; border-radius:3px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--text3); font-size:13px; cursor:pointer;
+  transition:all 0.12s; margin-left:2px;
+}
+.tl-track-del:hover { color:var(--danger); background:var(--danger-bg); }
 .tog { position: relative; width: 32px; height: 17px; display: inline-block; }
 .tog input { display: none; }
 .tog-sl {
@@ -984,6 +1013,54 @@ textarea:focus { border-color: var(--accent); }
                 <input type="number" id="ce_cropY_n" class="rng-num-in" value="0" min="-1" max="1" step="0.01">
               </div>
               <button id="ce_remove" class="btn-danger w100 mt4">删除此片段</button>
+              <!-- ── Clip Animations ── -->
+              <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border2)">
+                <div class="section-label" style="margin-bottom:6px">入场动画</div>
+                <div class="anim-row" id="ce_anim_in_row">
+                  <button class="anim-chip active" data-anim="">无</button>
+                  <button class="anim-chip" data-anim="fade">淡入</button>
+                  <button class="anim-chip" data-anim="slide-up">上滑</button>
+                  <button class="anim-chip" data-anim="slide-down">下滑</button>
+                  <button class="anim-chip" data-anim="slide-left">左滑</button>
+                  <button class="anim-chip" data-anim="slide-right">右滑</button>
+                  <button class="anim-chip" data-anim="zoom-in">放大</button>
+                  <button class="anim-chip" data-anim="zoom-out">缩小</button>
+                </div>
+                <div class="section-label" style="margin-bottom:6px;margin-top:8px">出场动画</div>
+                <div class="anim-row" id="ce_anim_out_row">
+                  <button class="anim-chip active" data-anim="">无</button>
+                  <button class="anim-chip" data-anim="fade">淡出</button>
+                  <button class="anim-chip" data-anim="slide-up">上滑</button>
+                  <button class="anim-chip" data-anim="slide-down">下滑</button>
+                  <button class="anim-chip" data-anim="slide-left">左滑</button>
+                  <button class="anim-chip" data-anim="slide-right">右滑</button>
+                  <button class="anim-chip" data-anim="zoom-in">放大</button>
+                  <button class="anim-chip" data-anim="zoom-out">缩小</button>
+                </div>
+                <div class="prop-row" style="margin-top:6px"><label style="font-size:11px">动画时长</label>
+                  <div class="rng-combo">
+                    <input type="range" id="ce_anim_dur" min="0.1" max="2" step="0.1" value="0.5" class="rng">
+                    <input type="number" id="ce_anim_dur_n" class="rng-num-in" value="0.5" min="0.1" max="2" step="0.1">
+                  </div>
+                </div>
+                <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border2)">
+                  <div class="section-label" style="margin-bottom:6px">转场效果（与下一片段间）</div>
+                  <div class="anim-row" id="ce_transition_row">
+                    <button class="anim-chip active" data-trans="">无</button>
+                    <button class="anim-chip" data-trans="fade">淡变</button>
+                    <button class="anim-chip" data-trans="wipe-left">左擦</button>
+                    <button class="anim-chip" data-trans="wipe-right">右擦</button>
+                    <button class="anim-chip" data-trans="zoom">缩放</button>
+                    <button class="anim-chip" data-trans="blur">模糊</button>
+                  </div>
+                  <div class="prop-row" style="margin-top:6px"><label style="font-size:11px">转场时长</label>
+                    <div class="rng-combo">
+                      <input type="range" id="ce_trans_dur" min="0.1" max="2" step="0.1" value="0.5" class="rng">
+                      <input type="number" id="ce_trans_dur_n" class="rng-num-in" value="0.5" min="0.1" max="2" step="0.1">
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1105,6 +1182,32 @@ textarea:focus { border-color: var(--accent); }
             <div class="rng-combo">
               <input type="range" id="cap_letter" min="-5" max="30" step="0.5" value="0" class="rng">
               <input type="number" id="cap_letter_num" class="rng-num-in" value="0" min="-5" max="30" step="0.5">
+            </div>
+          </div>
+          <!-- Caption animations -->
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border2)">
+            <div class="section-label" style="margin-bottom:5px">字幕入场动画</div>
+            <div class="anim-row" id="cap_anim_in_row">
+              <button class="anim-chip active" data-anim="">无</button>
+              <button class="anim-chip" data-anim="fade">淡入</button>
+              <button class="anim-chip" data-anim="slide-up">上滑</button>
+              <button class="anim-chip" data-anim="slide-down">下滑</button>
+              <button class="anim-chip" data-anim="zoom-in">放大</button>
+              <button class="anim-chip" data-anim="typewriter">打字机</button>
+            </div>
+            <div class="section-label" style="margin-bottom:5px;margin-top:6px">字幕出场动画</div>
+            <div class="anim-row" id="cap_anim_out_row">
+              <button class="anim-chip active" data-anim="">无</button>
+              <button class="anim-chip" data-anim="fade">淡出</button>
+              <button class="anim-chip" data-anim="slide-up">上滑</button>
+              <button class="anim-chip" data-anim="slide-down">下滑</button>
+              <button class="anim-chip" data-anim="zoom-out">缩小</button>
+            </div>
+            <div class="prop-row" style="margin-top:6px"><label style="font-size:11px">动画时长</label>
+              <div class="rng-combo">
+                <input type="range" id="cap_anim_dur" min="0.1" max="2" step="0.1" value="0.4" class="rng">
+                <input type="number" id="cap_anim_dur_n" class="rng-num-in" value="0.4" min="0.1" max="2" step="0.1">
+              </div>
             </div>
           </div>
         </div>
@@ -1394,14 +1497,10 @@ const S = {
   },
   isDark: true,
   muted: false,
-  // Feature 1: BGM library
-  bgmFiles: [],          // [{name, path, duration, audioEl}]
-  bgmSelected: new Set(), // selected filenames
-  bgmPreviewEl: null,    // currently previewing audio element
-  // Feature 2: Crop/pan mode
+  bgmFiles: [], bgmSelected: new Set(), bgmPreviewEl: null,
   cropMode: false,
-  // Feature 3: Export speed mode
-  exportMode: 'fast',    // 'fast' | 'balanced' | 'quality'
+  exportMode: 'fast',
+  customFonts: [], // [{name, family}]
 };
 
 let globalRAF = null;
@@ -1492,7 +1591,6 @@ document.addEventListener('click', () => ctxMenu.hide(), true);
 
 const TRANS_CACHE = {};
 
-// Language names for the translation prompt
 const LANG_NAMES = {
   en: 'English', ja: '日文（Japanese）', ko: '韩文（Korean）',
   fr: '法文（French）', de: '德文（German）', es: '西班牙文（Spanish）',
@@ -1500,54 +1598,11 @@ const LANG_NAMES = {
   ru: '俄文（Russian）', th: '泰文（Thai）', vi: '越南文（Vietnamese）',
 };
 
-// Translate using Claude API with 信达雅 (faithfulness, expressiveness, elegance) principles.
-// Falls back to MyMemory if Claude API is unavailable or fails.
+// Translate via MyMemory free API
 const translateText = async (text, targetLang) => {
   if (!targetLang || targetLang === '') return '';
   const cacheKey = `${targetLang}:${text}`;
   if (TRANS_CACHE[cacheKey]) return TRANS_CACHE[cacheKey];
-
-  const langName = LANG_NAMES[targetLang] || targetLang;
-
-  // Try Claude API first (高质量翻译)
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 300,
-        messages: [{
-          role: 'user',
-          content: `请将以下中文字幕翻译成${langName}。
-
-翻译要求（信达雅原则）：
-- 信：准确传达原文含义，不漏译、不误译
-- 达：表达自然流畅，符合目标语言的表达习惯，避免逐字直译造成的生硬感
-- 雅：语言简洁优美，适合字幕场景，用词精准
-
-注意事项：
-- 这是视频字幕，长度应与原文相近，不要过长
-- 直接输出译文，不要任何解释、标注或引号
-
-原文：${text}`
-        }]
-      })
-    });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      const result = (data.content?.[0]?.text || '').trim();
-      if (result && result.length > 0 && result.length < text.length * 6) {
-        TRANS_CACHE[cacheKey] = result;
-        return result;
-      }
-    }
-  } catch (_) {
-    // Claude API unavailable, fall through to MyMemory
-  }
-
-  // Fallback: MyMemory free API
   try {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=zh|${targetLang}`;
     const res = await fetch(url);
@@ -1617,6 +1672,66 @@ const resizeStage = () => {
   renderFrame();
 };
 
+// ── Animation helpers ──
+const easeOut = t => 1 - Math.pow(1-t, 2);
+const easeIn  = t => Math.pow(t, 2);
+
+// Compute animation transform for a clip at time t
+// Returns {alpha, tx, ty, scaleX, scaleY} offsets to apply
+const getClipAnimState = (clip, t) => {
+  const realLen = clip.len / (clip.speed || 1);
+  const localT = t - clip.startTime; // 0..realLen
+  const dur = Math.max(0.05, clip.animDur ?? 0.5);
+  let alpha = clip.opacity ?? 1;
+  let tx = 0, ty = 0, sc = 1;
+
+  // In-animation
+  if (clip.animIn && localT < dur) {
+    const p = easeOut(localT / dur); // 0→1
+    const inv = 1 - p;
+    switch(clip.animIn) {
+      case 'fade':       alpha *= p; break;
+      case 'slide-up':   ty = 80 * inv; alpha *= p; break;
+      case 'slide-down': ty = -80 * inv; alpha *= p; break;
+      case 'slide-left': tx = 120 * inv; alpha *= p; break;
+      case 'slide-right':tx = -120 * inv; alpha *= p; break;
+      case 'zoom-in':    sc = 0.5 + 0.5*p; alpha *= p; break;
+      case 'zoom-out':   sc = 1.5 - 0.5*p; alpha *= p; break;
+    }
+  }
+
+  // Out-animation
+  if (clip.animOut && localT > realLen - dur) {
+    const p = easeIn((realLen - localT) / dur); // 1→0
+    const inv = 1 - p;
+    switch(clip.animOut) {
+      case 'fade':       alpha *= p; break;
+      case 'slide-up':   ty = -80 * inv; alpha *= p; break;
+      case 'slide-down': ty = 80 * inv; alpha *= p; break;
+      case 'slide-left': tx = -120 * inv; alpha *= p; break;
+      case 'slide-right':tx = 120 * inv; alpha *= p; break;
+      case 'zoom-in':    sc = 1 + 0.5*inv; alpha *= p; break;
+      case 'zoom-out':   sc = 1 - 0.5*inv; alpha *= p; break;
+    }
+  }
+  return { alpha, tx, ty, sc };
+};
+
+// Compute transition blend for a clip at time t
+// Returns { blendAlpha } — 0=fully previous clip, 1=fully this clip
+const getTransitionBlend = (clip, t, allClips) => {
+  if (!clip.transition) return 1;
+  const transDur = clip.transDur ?? 0.5;
+  const localT = t - clip.startTime;
+  // Find previous clip on same track
+  const prev = allClips
+    .filter(c => c.trackIdx === clip.trackIdx && c.startTime < clip.startTime)
+    .sort((a,b) => b.startTime - a.startTime)[0];
+  if (!prev) return 1;
+  if (localT < transDur) return easeOut(localT / transDur);
+  return 1;
+};
+
 const renderFrame = () => {
   if (!ctx) return;
   const t = S.playback.time;
@@ -1641,18 +1756,21 @@ const renderFrame = () => {
     const vh = v.videoHeight || stageH;
     if (!vw || !vh) return;
 
+    const anim = getClipAnimState(clip, t);
+    const blend = getTransitionBlend(clip, t, S.videoClips);
+
     ctx.save();
-    ctx.globalAlpha = clip.opacity ?? 1;
+    ctx.globalAlpha = anim.alpha * blend;
     ctx.filter = [
       `brightness(${clip.brightness||1})`,
       `contrast(${clip.contrast||1})`,
       `saturate(${clip.sat||1})`,
     ].join(' ');
-    ctx.translate(stageW/2 + (clip.x||0), stageH/2 + (clip.y||0));
-    ctx.scale(clip.scale||1, clip.scale||1);
 
-    // Feature 2: per-clip crop offset (normalized -1..1)
-    // cropOffsetX/Y=0 → centered; ±1 → full edge
+    // Apply animation offsets
+    ctx.translate(stageW/2 + (clip.x||0) + anim.tx, stageH/2 + (clip.y||0) + anim.ty);
+    ctx.scale((clip.scale||1)*anim.sc, (clip.scale||1)*anim.sc);
+
     const stageAR = stageW / stageH;
     const videoAR = vw / vh;
     let drawW, drawH;
@@ -1668,9 +1786,80 @@ const renderFrame = () => {
     ctx.clip();
     try { ctx.drawImage(v, offX - stageW/2, offY - stageH/2, drawW, drawH); } catch(e) {}
     ctx.restore();
+
+    // Draw selected highlight
+    if (clip.id === S.selectedVideoId) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(91,110,245,0.9)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 4]);
+      ctx.strokeRect(3, 3, stageW - 6, stageH - 6);
+      ctx.setLineDash([]);
+      // Label
+      ctx.fillStyle = 'rgba(91,110,245,0.85)';
+      ctx.fillRect(4, 4, 120, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillText(`📹 ${clip.title||'视频'}`, 10, 14);
+      ctx.restore();
+    }
   });
 
-  // FIX 1: Canvas is the ONLY place captions are drawn during preview
+  // Handle wipe/blur transitions as canvas overlay
+  clipsToShow.forEach(clip => {
+    if (!clip.transition) return;
+    const transDur = clip.transDur ?? 0.5;
+    const localT = t - clip.startTime;
+    if (localT >= transDur) return;
+    const p = easeOut(localT / transDur); // 0→1 (p=1 = new clip fully visible)
+    const inv = 1-p;
+
+    const prev = S.videoClips
+      .filter(c => c.trackIdx === clip.trackIdx && c.startTime < clip.startTime)
+      .sort((a,b) => b.startTime - a.startTime)[0];
+    if (!prev) return;
+    const pv = prev.videoEl;
+    if (!pv || pv.readyState < 2) return;
+
+    ctx.save();
+    switch(clip.transition) {
+      case 'wipe-left': {
+        // Clip the new clip to a growing rect from right to left
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.rect(stageW*(1-p), 0, stageW*p, stageH);
+        ctx.clip();
+        const vw2=pv.videoWidth||stageW,vh2=pv.videoHeight||stageH;
+        const ar2=vw2/vh2,sar=stageW/stageH;
+        let dw2,dh2;
+        if(ar2>sar){dh2=stageH;dw2=stageH*ar2;}else{dw2=stageW;dh2=stageW/ar2;}
+        // draw previous clip fading in the revealed area
+        ctx.drawImage(pv, (stageW-dw2)/2, (stageH-dh2)/2, dw2, dh2);
+        break;
+      }
+      case 'wipe-right': {
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.rect(0, 0, stageW*p, stageH);
+        ctx.clip();
+        break;
+      }
+      case 'blur': {
+        ctx.globalAlpha = inv * 0.7;
+        ctx.filter = `blur(${inv * 12}px)`;
+        const vwb=pv.videoWidth||stageW,vhb=pv.videoHeight||stageH;
+        const arb=vwb/vhb,sarb=stageW/stageH;
+        let dwb,dhb;
+        if(arb>sarb){dhb=stageH;dwb=stageH*arb;}else{dwb=stageW;dhb=stageW/arb;}
+        try { ctx.drawImage(pv, (stageW-dwb)/2, (stageH-dhb)/2, dwb, dhb); } catch(_) {}
+        break;
+      }
+    }
+    ctx.restore();
+  });
+
   drawCaptionsOnCanvas(ctx, t, stageW, stageH);
 };
 
@@ -1681,23 +1870,57 @@ const drawCaptionsOnCanvas = (targetCtx, t, w, h) => {
   activeCaps.forEach(cap => {
     const align = cs.textAlign || 'center';
     const maxW = cap.widthPct ? (cap.widthPct / 100) * w : w * 0.85;
-    // Anchor px is position of the text box center (for center/left/right)
     const boxCenterX = ((cap.px ?? 50) / 100) * w;
-    const py = ((cap.py ?? 85) / 100) * h;
-    // For left align, px is left edge + half maxW; for right align, px is right edge - half maxW
-    let px = boxCenterX;
+    const basePy = ((cap.py ?? 85) / 100) * h;
     const size = cap.fontSize || cs.size || 32;
     const weight = cs.weight || '700';
     const font = `${weight} ${size}px ${cs.font}`;
     const transSize = Math.max(10, Math.round(size * 0.72));
 
+    // ── Caption animation ──
+    const animDur = Math.max(0.05, cs.animDur ?? 0.4);
+    const dur = (cap.endTime||0) - (cap.startTime||0);
+    const localT = t - cap.startTime;
+    let capAlpha = 1, capTy = 0, capSc = 1;
+
+    // In animation
+    if (cs.animIn && localT < animDur) {
+      const p = easeOut(localT / animDur);
+      const inv = 1 - p;
+      switch(cs.animIn) {
+        case 'fade':       capAlpha *= p; break;
+        case 'slide-up':   capTy = 40*inv; capAlpha *= p; break;
+        case 'slide-down': capTy = -40*inv; capAlpha *= p; break;
+        case 'zoom-in':    capSc = 0.6+0.4*p; capAlpha *= p; break;
+        case 'typewriter': break; // handled in text rendering
+      }
+    }
+    // Out animation
+    if (cs.animOut && localT > dur - animDur) {
+      const p = easeIn((dur - localT) / animDur);
+      const inv = 1 - p;
+      switch(cs.animOut) {
+        case 'fade':       capAlpha *= p; break;
+        case 'slide-up':   capTy = -40*inv; capAlpha *= p; break;
+        case 'slide-down': capTy = 40*inv; capAlpha *= p; break;
+        case 'zoom-out':   capSc = 1 - 0.4*inv; capAlpha *= p; break;
+      }
+    }
+
+    const py = basePy + capTy;
+
     targetCtx.save();
     targetCtx.font = font;
     targetCtx.textAlign = align;
     targetCtx.textBaseline = 'middle';
+    targetCtx.globalAlpha *= capAlpha;
+    if (capSc !== 1) {
+      targetCtx.translate(boxCenterX, py);
+      targetCtx.scale(capSc, capSc);
+      targetCtx.translate(-boxCenterX, -py);
+    }
 
-    // Resolve the actual x for drawing depending on alignment
-    let drawX = px;
+    let drawX = boxCenterX;
     if (align === 'left') drawX = boxCenterX - maxW / 2;
     else if (align === 'right') drawX = boxCenterX + maxW / 2;
 
@@ -1724,7 +1947,15 @@ const drawCaptionsOnCanvas = (targetCtx, t, w, h) => {
       return lines2.length ? lines2 : [text];
     };
 
-    const mainLines = wrapText(cap.text, maxW, font);
+    // Typewriter effect: reveal characters based on time
+    let displayText = cap.text;
+    if (cs.animIn === 'typewriter' && localT < animDur) {
+      const totalChars = cap.text.length;
+      const revealedChars = Math.round((localT / animDur) * totalChars);
+      displayText = cap.text.slice(0, revealedChars);
+    }
+
+    const mainLines = wrapText(displayText, maxW, font);
     const lh = size * (cs.lineHeight || 1.4);
     const transLh = transSize * (cs.lineHeight || 1.4);
 
@@ -1743,40 +1974,36 @@ const drawCaptionsOnCanvas = (targetCtx, t, w, h) => {
       const by = py - totalH/2 - 8;
       const bw = maxW + pad*2;
       const bh = totalH + 16;
-      targetCtx.globalAlpha = cs.bgOpacity ?? 0.55;
+      targetCtx.globalAlpha = (cs.bgOpacity ?? 0.55) * capAlpha;
       targetCtx.fillStyle = cs.bgColor || '#000000';
       roundRect(targetCtx, bx, by, bw, bh, r);
       targetCtx.fill();
-      targetCtx.globalAlpha = 1;
+      targetCtx.globalAlpha = capAlpha;
     }
 
-    // Helper to draw a single line with optional letter-spacing
-    const drawLine = (line, x, y, strokeIt) => {
+    const drawLine = (line, x, ly, strokeIt) => {
       const ls = cs.letterSpacing || 0;
       if (ls === 0) {
-        if (strokeIt) { targetCtx.strokeText(line, x, y); }
-        else { targetCtx.fillText(line, x, y); }
+        if (strokeIt) targetCtx.strokeText(line, x, ly);
+        else targetCtx.fillText(line, x, ly);
       } else {
-        // Manual letter spacing
         const chars = [...line];
         const totalW = chars.reduce((s, c) => s + targetCtx.measureText(c).width + ls, 0) - ls;
         let cx;
         if (align === 'center') cx = x - totalW / 2;
         else if (align === 'right') cx = x - totalW;
         else cx = x;
-        // Save and temporarily use left align for per-char drawing
         const savedAlign = targetCtx.textAlign;
         targetCtx.textAlign = 'left';
         chars.forEach(ch => {
-          if (strokeIt) targetCtx.strokeText(ch, cx, y);
-          else targetCtx.fillText(ch, cx, y);
+          if (strokeIt) targetCtx.strokeText(ch, cx, ly);
+          else targetCtx.fillText(ch, cx, ly);
           cx += targetCtx.measureText(ch).width + ls;
         });
         targetCtx.textAlign = savedAlign;
       }
     };
 
-    // Draw main text
     targetCtx.font = font;
     targetCtx.textAlign = align;
     targetCtx.textBaseline = 'middle';
@@ -1797,7 +2024,6 @@ const drawCaptionsOnCanvas = (targetCtx, t, w, h) => {
       targetCtx.shadowColor = 'transparent'; targetCtx.shadowBlur = 0; targetCtx.shadowOffsetX = 0; targetCtx.shadowOffsetY = 0;
     });
 
-    // Draw translation text
     if (transLines.length) {
       const transFont = `${weight} ${transSize}px ${cs.font}`;
       targetCtx.font = transFont;
@@ -1814,11 +2040,24 @@ const drawCaptionsOnCanvas = (targetCtx, t, w, h) => {
         targetCtx.shadowColor = 'transparent'; targetCtx.shadowBlur = 0; targetCtx.shadowOffsetX = 0; targetCtx.shadowOffsetY = 0;
         if (cs.shadow) { targetCtx.shadowColor='rgba(0,0,0,0.9)'; targetCtx.shadowBlur=6; targetCtx.shadowOffsetX=1; targetCtx.shadowOffsetY=1; }
         targetCtx.fillStyle = cs.color || '#fff';
-        targetCtx.globalAlpha = 0.85;
+        targetCtx.globalAlpha = 0.85 * capAlpha;
         drawLine(line, drawX, ly, false);
-        targetCtx.globalAlpha = 1;
+        targetCtx.globalAlpha = capAlpha;
         targetCtx.shadowColor = 'transparent'; targetCtx.shadowBlur = 0; targetCtx.shadowOffsetX = 0; targetCtx.shadowOffsetY = 0;
       });
+    }
+
+    // Selection highlight for selected caption
+    if (cap.id === S.selectedCaptionId) {
+      targetCtx.save();
+      targetCtx.globalAlpha = 0.9;
+      targetCtx.strokeStyle = 'rgba(224,80,122,0.9)';
+      targetCtx.lineWidth = 2;
+      targetCtx.setLineDash([6, 3]);
+      const hlPad = 10;
+      targetCtx.strokeRect(boxCenterX - maxW/2 - hlPad, py - totalH/2 - hlPad, maxW + hlPad*2, totalH + hlPad*2);
+      targetCtx.setLineDash([]);
+      targetCtx.restore();
     }
 
     targetCtx.restore();
@@ -2218,7 +2457,24 @@ const renderTimeline = () => {
   // ── Video tracks (one row per track index) ─────────
   const videoTracks = groupVideoByTrack();
   videoTracks.forEach((clips, trackIdx) => {
-    const row = makeTrackRow(`V${trackIdx+1}`, totalPx);
+    const onDelTrack = clips.length === 0 ? () => {
+      // Remove empty track
+      videoTrackCount = Math.max(1, videoTrackCount - 1);
+      tlVideoTrackRows = videoTrackCount;
+      renderTimeline();
+    } : (clips.every(c => true) ? async () => {
+      const ok = await showConfirm('删除轨道', `确定删除视频轨道 V${trackIdx+1} 及其 ${clips.length} 个片段？`);
+      if (!ok) return;
+      clips.forEach(c => { if(c.videoEl){c.videoEl.pause();c.videoEl.src='';} });
+      S.videoClips = S.videoClips.filter(c => c.trackIdx !== trackIdx);
+      // Re-index tracks above this one
+      S.videoClips.forEach(c => { if (c.trackIdx > trackIdx) c.trackIdx--; });
+      videoTrackCount = Math.max(1, videoTrackCount - 1);
+      tlVideoTrackRows = videoTrackCount;
+      renderTimeline(); renderFrame();
+      toast(`已删除轨道 V${trackIdx+1}`, 'info');
+    } : null);
+    const row = makeTrackRow(`V${trackIdx+1}`, totalPx, onDelTrack);
     clips.forEach(clip => {
       const realLen = clip.len / (clip.speed||1);
       const el = makeClipEl(clip.id, clip.startTime*pps, realLen*pps, clip.title||'片段', 'tl-clip-video', S.selectedVideoId===clip.id);
@@ -2268,7 +2524,17 @@ const renderTimeline = () => {
     trackNums.forEach(ti => {
       const caps = captionsByTrack.get(ti);
       const rowLabel = trackNums.length > 1 ? `字幕${ti+1}` : '字幕';
-      const capRow = makeTrackRow(rowLabel, totalPx);
+      const onDelCapTrack = async () => {
+        const ok = await showConfirm('删除字幕轨道', `确定删除字幕轨道 ${rowLabel} 及其 ${caps.length} 条字幕？`);
+        if (!ok) return;
+        const idsToRemove = new Set(caps.map(c => c.id));
+        idsToRemove.forEach(id => { const el = g('capel_'+id); if(el) el.remove(); });
+        S.captions = S.captions.filter(c => !idsToRemove.has(c.id));
+        if (idsToRemove.has(S.selectedCaptionId)) S.selectedCaptionId = null;
+        renderCaptionList(); renderTimeline(); renderFrame();
+        toast(`已删除 ${caps.length} 条字幕`, 'info');
+      };
+      const capRow = makeTrackRow(rowLabel, totalPx, onDelCapTrack);
       caps.forEach(cap => {
         const dur = (cap.endTime||0) - (cap.startTime||0);
         const el = makeClipEl(
@@ -2370,11 +2636,21 @@ const groupCaptionByTrack = () => {
 let tlVideoTrackRows = 1;
 const addVideoTrackRow = () => { tlVideoTrackRows++; videoTrackCount = tlVideoTrackRows; };
 
-const makeTrackRow = (label, totalPx) => {
+const makeTrackRow = (label, totalPx, onDelete) => {
   const row = document.createElement('div');
   row.className = 'tl-track-row';
-  row.innerHTML = `<div class="tl-track-label">${label}</div>
+  const delHtml = onDelete
+    ? `<button class="tl-track-del" title="删除轨道">×</button>`
+    : '';
+  row.innerHTML = `<div class="tl-track-label" style="display:flex;align-items:center;justify-content:flex-end;gap:2px;padding-right:4px">
+      <span style="flex:1;text-align:right">${label}</span>${delHtml}
+    </div>
     <div class="tl-track-content" style="min-width:${totalPx}px;position:relative;"></div>`;
+  if (onDelete) {
+    row.querySelector('.tl-track-del')?.addEventListener('click', e => {
+      e.stopPropagation(); onDelete();
+    });
+  }
   return row;
 };
 
@@ -2414,17 +2690,64 @@ const makeTlClipDraggable = (el, dataObj, pps, type) => {
     if (e.target.classList.contains('tl-clip-resize')) return;
     e.preventDefault();
     const startX = e.clientX, startLeft = parseFloat(el.style.left);
+    const origStart = type === 'video' ? dataObj.startTime
+      : type === 'caption' ? dataObj.startTime
+      : dataObj.startTime;
+
     const onMove = (me) => {
-      const newLeft = Math.max(0, startLeft + (me.clientX - startX));
-      el.style.left = newLeft + 'px';
-      const newStart = newLeft / pps;
-      if (type === 'video') dataObj.startTime = newStart;
-      else if (type === 'caption') { const dur = (dataObj.endTime||0)-(dataObj.startTime||0); dataObj.startTime = newStart; dataObj.endTime = newStart + dur; }
-      else if (type === 'audio') dataObj.startTime = newStart;
+      const rawLeft = Math.max(0, startLeft + (me.clientX - startX));
+      const newStart = rawLeft / pps;
+
+      if (type === 'video') {
+        // Collision: clamp against other clips on same track
+        const len = dataObj.len / (dataObj.speed||1);
+        const others = S.videoClips.filter(c => c.id !== dataObj.id && c.trackIdx === dataObj.trackIdx);
+        let clamped = newStart;
+        for (const other of others) {
+          const oLen = other.len / (other.speed||1);
+          // If would overlap: push to just after or just before
+          if (clamped < other.startTime + oLen && clamped + len > other.startTime) {
+            const gapBefore = other.startTime - len;
+            const gapAfter  = other.startTime + oLen;
+            clamped = Math.abs(newStart - gapBefore) < Math.abs(newStart - gapAfter)
+              ? Math.max(0, gapBefore) : gapAfter;
+          }
+        }
+        dataObj.startTime = clamped;
+        el.style.left = (clamped * pps) + 'px';
+
+      } else if (type === 'caption') {
+        const dur = (dataObj.endTime||0) - (dataObj.startTime||0);
+        // Collision on same trackIdx
+        const others = S.captions.filter(c => c.id !== dataObj.id && (c.trackIdx??0) === (dataObj.trackIdx??0));
+        let clamped = newStart;
+        for (const other of others) {
+          const oDur = (other.endTime||0) - (other.startTime||0);
+          if (clamped < other.startTime + oDur && clamped + dur > other.startTime) {
+            const gapBefore = other.startTime - dur;
+            const gapAfter  = other.startTime + oDur;
+            clamped = Math.abs(newStart - gapBefore) < Math.abs(newStart - gapAfter)
+              ? Math.max(0, gapBefore) : gapAfter;
+          }
+        }
+        dataObj.startTime = clamped;
+        dataObj.endTime = clamped + dur;
+        el.style.left = (clamped * pps) + 'px';
+
+      } else if (type === 'audio') {
+        dataObj.startTime = newStart;
+        el.style.left = rawLeft + 'px';
+      }
       renderFrame();
     };
-    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); renderTimeline(); updateExportStats(); };
-    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      renderTimeline(); updateExportStats();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
 };
 
@@ -2610,6 +2933,21 @@ const populateClipEditor = (id) => {
   set('ce_opacity', clip.opacity??1); set('ce_opacity_n', (clip.opacity??1));
   set('ce_cropX', clip.cropOffsetX??0); set('ce_cropX_n', (clip.cropOffsetX??0));
   set('ce_cropY', clip.cropOffsetY??0); set('ce_cropY_n', (clip.cropOffsetY??0));
+  // Animation state
+  const animDur = clip.animDur ?? 0.5;
+  set('ce_anim_dur', animDur); set('ce_anim_dur_n', animDur);
+  const transDur = clip.transDur ?? 0.5;
+  set('ce_trans_dur', transDur); set('ce_trans_dur_n', transDur);
+  // Restore chip selections
+  const activateChip = (rowId, val) => {
+    const row = g(rowId); if (!row) return;
+    row.querySelectorAll('.anim-chip').forEach(c => {
+      c.classList.toggle('active', (c.dataset.anim||'') === (val||''));
+    });
+  };
+  activateChip('ce_anim_in_row', clip.animIn||'');
+  activateChip('ce_anim_out_row', clip.animOut||'');
+  activateChip('ce_transition_row', clip.transition||'');
 };
 
 const applyClipEdits = () => {
@@ -4470,8 +4808,136 @@ document.addEventListener('DOMContentLoaded', () => {
   g('bgmAddMatchBtn')?.addEventListener('click', bgmAutoMatch);
   g('bgmAddSelectedBtn')?.addEventListener('click', bgmAddSelected);
 
-  // Auto-load prompt (Feature 1)
-  autoLoadBgm();
+  // ── Custom font loader from ./font/ directory ──
+  // We attempt to load fonts listed via a manifest or by trying common names.
+  // Since browsers can't list directory contents, we use a fonts/manifest.json pattern,
+  // falling back to a font-picker file input for direct loading.
+  const loadCustomFonts = async () => {
+    try {
+      // Try manifest.json first (user can place one in ./font/manifest.json)
+      const resp = await fetch('./font/manifest.json');
+      if (resp.ok) {
+        const manifest = await resp.json(); // [{name, file}]
+        let css = '';
+        const sel = g('cap_font');
+        for (const entry of manifest) {
+          const family = entry.name.replace(/\s+/g, '_');
+          css += `@font-face { font-family: '${family}'; src: url('./font/${entry.file}'); }\n`;
+          if (sel && ![...sel.options].some(o => o.value.includes(family))) {
+            const opt = document.createElement('option');
+            opt.value = `'${family}',sans-serif`;
+            opt.textContent = `✦ ${entry.name}`;
+            sel.appendChild(opt);
+          }
+          S.customFonts.push({ name: entry.name, family });
+        }
+        if (css) {
+          const styleEl = g('customFontStyles') || document.createElement('style');
+          styleEl.id = 'customFontStyles';
+          styleEl.textContent = css;
+          if (!styleEl.parentNode) document.head.appendChild(styleEl);
+        }
+        if (manifest.length) toast(`已加载 ${manifest.length} 个自定义字体`, 'success', 2500);
+      }
+    } catch (_) { /* no manifest — fonts/manifest.json not found, that's fine */ }
+  };
+  loadCustomFonts();
+
+  // Font file input picker (manual load)
+  const fontPickBtn = document.createElement('button');
+  fontPickBtn.className = 'btn-ghost';
+  fontPickBtn.style.cssText = 'width:100%;font-size:11px;margin-top:4px;padding:4px 8px';
+  fontPickBtn.textContent = '＋ 手动加载字体文件';
+  const fontFileIn = document.createElement('input');
+  fontFileIn.type = 'file'; fontFileIn.accept = '.ttf,.otf,.woff,.woff2'; fontFileIn.multiple = true; fontFileIn.hidden = true;
+  fontPickBtn.addEventListener('click', () => fontFileIn.click());
+  fontFileIn.addEventListener('change', () => {
+    const files = [...fontFileIn.files];
+    if (!files.length) return;
+    let css = '';
+    const sel = g('cap_font');
+    files.forEach(file => {
+      const family = file.name.replace(/\.[^.]+$/, '').replace(/\s+/g,'_');
+      const url = URL.createObjectURL(file);
+      css += `@font-face { font-family: '${family}'; src: url('${url}'); }\n`;
+      if (sel && ![...sel.options].some(o => o.value.includes(family))) {
+        const opt = document.createElement('option');
+        opt.value = `'${family}',sans-serif`;
+        opt.textContent = `✦ ${file.name.replace(/\.[^.]+$/, '')}`;
+        sel.appendChild(opt);
+      }
+      S.customFonts.push({ name: file.name, family, url });
+    });
+    const styleEl = g('customFontStyles');
+    if (styleEl) styleEl.textContent += css;
+    toast(`已加载字体: ${files.map(f=>f.name).join(', ')}`, 'success', 2500);
+    fontFileIn.value = '';
+  });
+  // Insert font picker below cap_font select
+  const fontRow = g('cap_font')?.closest('.prop-row');
+  if (fontRow) {
+    fontRow.insertAdjacentElement('afterend', fontPickBtn);
+    fontRow.insertAdjacentElement('afterend', fontFileIn);
+  }
+
+  // ── Animation chip listeners for clip editor ──
+  const setupAnimChips = (rowId, key) => {
+    const row = g(rowId); if (!row) return;
+    row.querySelectorAll('.anim-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        row.querySelectorAll('.anim-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        const clip = S.videoClips.find(c => c.id === S.selectedVideoId);
+        if (clip) { clip[key] = chip.dataset.anim || ''; renderFrame(); }
+      });
+    });
+  };
+  setupAnimChips('ce_anim_in_row', 'animIn');
+  setupAnimChips('ce_anim_out_row', 'animOut');
+  setupAnimChips('ce_transition_row', 'transition');
+
+  const animDurPair = ['ce_anim_dur', 'ce_anim_dur_n'];
+  [g(animDurPair[0]), g(animDurPair[1])].forEach((el, i) => {
+    el?.addEventListener('input', () => {
+      const other = g(animDurPair[1-i]);
+      if (other) other.value = el.value;
+      const clip = S.videoClips.find(c => c.id === S.selectedVideoId);
+      if (clip) { clip.animDur = parseFloat(el.value)||0.5; renderFrame(); }
+    });
+  });
+  const transDurPair = ['ce_trans_dur', 'ce_trans_dur_n'];
+  [g(transDurPair[0]), g(transDurPair[1])].forEach((el, i) => {
+    el?.addEventListener('input', () => {
+      const other = g(transDurPair[1-i]);
+      if (other) other.value = el.value;
+      const clip = S.videoClips.find(c => c.id === S.selectedVideoId);
+      if (clip) { clip.transDur = parseFloat(el.value)||0.5; renderFrame(); }
+    });
+  });
+
+  // ── Animation chip listeners for caption style ──
+  const setupCapAnimChips = (rowId, styleKey) => {
+    const row = g(rowId); if (!row) return;
+    row.querySelectorAll('.anim-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        row.querySelectorAll('.anim-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        S.capStyle[styleKey] = chip.dataset.anim || '';
+        renderFrame();
+      });
+    });
+  };
+  setupCapAnimChips('cap_anim_in_row', 'animIn');
+  setupCapAnimChips('cap_anim_out_row', 'animOut');
+  const capAnimDurPair = ['cap_anim_dur', 'cap_anim_dur_n'];
+  [g(capAnimDurPair[0]), g(capAnimDurPair[1])].forEach((el, i) => {
+    el?.addEventListener('input', () => {
+      const other = g(capAnimDurPair[1-i]);
+      if (other) other.value = el.value;
+      S.capStyle.animDur = parseFloat(el.value)||0.4;
+      renderFrame();
+    });
+  });
 
   // ── FEATURE 2: VIDEO CROP/PAN MODE ──
   let cropModeActive = false;
