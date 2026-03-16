@@ -4823,7 +4823,7 @@ document.addEventListener('DOMContentLoaded', () => {
     lib.innerHTML = S.bgmFiles.map((f, idx) => {
       const sel = S.bgmSelected.has(f.name);
       const dur = f.duration > 0 ? fmtShort(f.duration) : '…';
-      const dispName = f.name.replace(/\.[^.]+$/, '');
+      const dispName = f.displayName || f.name.replace(/\.[^.]+$/, '');
       const isPlaying = bgmPreviewState.idx === idx;
       return `<div class="bgm-item ${sel?'bgm-selected':''}" data-name="${f.name}" data-idx="${idx}">
         <div class="bgm-check">${sel?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>':''}</div>
@@ -5090,37 +5090,51 @@ document.addEventListener('DOMContentLoaded', () => {
   loadCustomFonts();
 
   // ── Auto-load BGM from ./BGM/manifest.json (same pattern as custom fonts) ──
-  // Place a manifest.json in ./BGM/ with format: [{"name":"Track 1","file":"track1.mp3"}, ...]
+  // Place a manifest.json in ./BGM/ with format: [{"name":"曲名","file":"filename.mp3"}, ...]
+  // Requires the HTML to be served via HTTP (not file://) OR a local server.
   const loadBgmFromManifest = async () => {
-    try {
-      const resp = await fetch('./BGM/manifest.json');
-      if (!resp.ok) return;
-      const manifest = await resp.json(); // [{name, file}]
-      if (!Array.isArray(manifest) || !manifest.length) return;
+    // Only works when served over HTTP/HTTPS — file:// protocol blocks fetch
+    if (location.protocol === 'file:') {
+      console.info('BGM auto-load: skipped on file:// protocol. Serve via HTTP for auto-load to work.');
+      return;
+    }
+    const tryPaths = ['./BGM/manifest.json', './bgm/manifest.json', './music/manifest.json'];
+    let manifest = null;
+    let basePath = './BGM/';
+    for (const p of tryPaths) {
+      try {
+        const resp = await fetch(p, { cache: 'no-cache' });
+        if (resp.ok) {
+          manifest = await resp.json();
+          basePath = p.replace('manifest.json', '');
+          break;
+        }
+      } catch (_) { /* try next */ }
+    }
+    if (!manifest || !Array.isArray(manifest) || !manifest.length) return;
 
-      stopBgmPreview();
-      S.bgmFiles.forEach(f => { if (f.url?.startsWith('blob:')) URL.revokeObjectURL(f.url); });
-      S.bgmFiles = []; S.bgmSelected.clear();
+    stopBgmPreview();
+    S.bgmFiles.forEach(f => { if (f.url?.startsWith('blob:')) URL.revokeObjectURL(f.url); });
+    S.bgmFiles = []; S.bgmSelected.clear();
 
-      for (const entry of manifest) {
-        if (!entry.file) continue;
-        const url = `./BGM/${entry.file}`;
-        const name = entry.name || entry.file.replace(/\.[^.]+$/, '');
-        const entry2 = { name: entry.file, url, duration: 0, file: null };
-        const probe = new Audio(url);
-        probe.addEventListener('loadedmetadata', () => {
-          entry2.duration = probe.duration || 0;
-          renderBgmLibrary();
-        }, { once: true });
-        probe.load();
-        S.bgmFiles.push(entry2);
-      }
+    for (const entry of manifest) {
+      if (!entry.file) continue;
+      const url = basePath + entry.file;
+      const displayName = entry.name || entry.file.replace(/\.[^.]+$/, '');
+      const entry2 = { name: entry.file, displayName, url, duration: 0, file: null };
+      const probe = new Audio(url);
+      probe.addEventListener('loadedmetadata', () => {
+        entry2.duration = probe.duration || 0;
+        renderBgmLibrary();
+      }, { once: true });
+      probe.load();
+      S.bgmFiles.push(entry2);
+    }
 
-      renderBgmLibrary();
-      const autoNote = g('bgmAutoNote');
-      if (autoNote) { autoNote.style.display = ''; autoNote.textContent = `✓ 已自动加载 BGM 文件夹 (${manifest.length} 首)`; }
-      toast(`已自动加载 ${manifest.length} 个 BGM`, 'success', 3000);
-    } catch (_) { /* no manifest — BGM/manifest.json not found, that's fine */ }
+    renderBgmLibrary();
+    const autoNote = g('bgmAutoNote');
+    if (autoNote) { autoNote.style.display = ''; autoNote.textContent = `✓ 已自动加载 BGM 文件夹 (${manifest.length} 首)`; }
+    toast(`已自动加载 ${manifest.length} 个 BGM`, 'success', 3000);
   };
   loadBgmFromManifest();
 
@@ -5314,42 +5328,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoAR = vw / vh;
     const stageAR = stageW / stageH;
 
-    // Compute the drawn video size in canvas pixels
-    let drawW, drawH;
-    if (videoAR > stageAR) { drawH = stageH; drawW = stageH * videoAR; }
-    else { drawW = stageW; drawH = stageW / videoAR; }
+    // Base drawn size at scale=1 (canvas pixels, cover-fit to stage)
+    let baseW, baseH;
+    if (videoAR > stageAR) { baseH = stageH; baseW = stageH * videoAR; }
+    else { baseW = stageW; baseH = stageW / videoAR; }
 
-    const ovX = drawW - stageW;
-    const ovY = drawH - stageH;
-
-    // Recompute element position from current clip state (CSS pixels relative to previewStage)
-    const getElPos = () => {
+    // ── Helper: sync overlay element geometry from current clip state ──
+    // The overlay box represents the full scaled video rectangle,
+    // centered at (stageW/2 + clip.x, stageH/2 + clip.y).
+    // cropOffset does NOT shift the box — it only shifts the visible region inside.
+    const syncEl = () => {
       const scX = clip.scaleX ?? clip.scale ?? 1;
       const scY = clip.scaleY ?? clip.scale ?? 1;
-      const curDrawW = drawW * scX;
-      const curDrawH = drawH * scY;
-      const curOvX = curDrawW - stageW;
-      const curOvY = curDrawH - stageH;
-      const cx = stageW / 2 + (clip.x || 0);
-      const cy = stageH / 2 + (clip.y || 0);
-      const offX = -(curOvX/2) + (clip.cropOffsetX ?? 0) * (curOvX/2);
-      const offY = -(curOvY/2) + (clip.cropOffsetY ?? 0) * (curOvY/2);
-      const rect = g('mainCanvas').getBoundingClientRect();
-      const cssScaleX = rect.width > 0 ? rect.width / stageW : 1;
-      const cssScaleY = rect.height > 0 ? rect.height / stageH : 1;
-      return {
-        left: (cx + offX - curDrawW/2) * cssScaleX,
-        top:  (cy + offY - curDrawH/2) * cssScaleY,
-        w:    curDrawW * cssScaleX,
-        h:    curDrawH * cssScaleY,
-      };
+      const curW = baseW * scX;
+      const curH = baseH * scY;
+      const cx = stageW / 2 + (clip.x || 0);  // canvas-pixel center X
+      const cy = stageH / 2 + (clip.y || 0);  // canvas-pixel center Y
+      // CSS position: top-left corner of the box (canvas px == CSS px since stageW = canvas.width)
+      el.style.left   = (cx - curW / 2) + 'px';
+      el.style.top    = (cy - curH / 2) + 'px';
+      el.style.width  = curW + 'px';
+      el.style.height = curH + 'px';
     };
 
     const el = document.createElement('div');
     el.className = 'vcrop-el vcrop-active';
     el.id = 'vcrop_' + clip.id;
-    const pos = getElPos();
-    el.style.cssText = `left:${pos.left}px;top:${pos.top}px;width:${pos.w}px;height:${pos.h}px;`;
+    syncEl();
 
     const label = document.createElement('div');
     label.className = 'vcrop-label';
@@ -5364,145 +5369,96 @@ document.addEventListener('DOMContentLoaded', () => {
       el.appendChild(h);
     });
 
-    // Helper: get the CSS-to-canvas pixel scale ratio
-    const getCanvasScale = () => {
-      const rect = g('mainCanvas').getBoundingClientRect();
-      return rect.width > 0 ? stageW / rect.width : 1;
-    };
-
-    // ── Drag to move freely (updates clip.x / clip.y position) ──
+    // ── Drag body: free-move clip position (clip.x / clip.y) ──
     el.addEventListener('mousedown', e => {
       if (e.target.classList.contains('vcrop-handle')) return;
       e.preventDefault(); e.stopPropagation();
-      const csScale = getCanvasScale();
       const startMouseX = e.clientX, startMouseY = e.clientY;
       const startClipX = clip.x || 0;
       const startClipY = clip.y || 0;
+      // canvas px per screen px ratio (same as CSS px here since canvas=stage size)
+      const rect0 = g('mainCanvas').getBoundingClientRect();
+      const pxRatio = stageW / rect0.width;
 
       const onMove = me => {
-        // Convert screen-pixel delta to canvas-pixel delta, then update clip position
-        const dx = (me.clientX - startMouseX) * csScale;
-        const dy = (me.clientY - startMouseY) * csScale;
-        clip.x = startClipX + dx;
-        clip.y = startClipY + dy;
-        // Reposition the overlay element to match
-        const rect2 = g('mainCanvas').getBoundingClientRect();
-        const cssScaleX = rect2.width > 0 ? rect2.width / stageW : 1;
-        const cssScaleY = rect2.height > 0 ? rect2.height / stageH : 1;
-        const curScX = clip.scaleX ?? clip.scale ?? 1;
-        const curScY = clip.scaleY ?? clip.scale ?? 1;
-        const curDrawW = drawW * curScX;
-        const curDrawH = drawH * curScY;
-        const curOvX = curDrawW - stageW;
-        const curOvY = curDrawH - stageH;
-        const offX = -(curOvX/2) + (clip.cropOffsetX ?? 0) * (curOvX/2);
-        const offY = -(curOvY/2) + (clip.cropOffsetY ?? 0) * (curOvY/2);
-        const cx2 = stageW / 2 + clip.x;
-        const cy2 = stageH / 2 + clip.y;
-        el.style.left = ((cx2 + offX - curDrawW/2) * cssScaleX) + 'px';
-        el.style.top  = ((cy2 + offY - curDrawH/2) * cssScaleY) + 'px';
-        label.textContent = `${clip.title||'视频'} [X:${Math.round(clip.x)}, Y:${Math.round(clip.y)}]`;
-        // Sync position fields
+        clip.x = startClipX + (me.clientX - startMouseX) * pxRatio;
+        clip.y = startClipY + (me.clientY - startMouseY) * pxRatio;
+        syncEl();
+        label.textContent = `${clip.title||'视频'} X:${Math.round(clip.x)} Y:${Math.round(clip.y)}`;
         const xEl = g('ce_x'); if (xEl) xEl.value = Math.round(clip.x);
         const xNEl = g('ce_x_n'); if (xNEl) xNEl.value = Math.round(clip.x);
         const yEl = g('ce_y'); if (yEl) yEl.value = Math.round(clip.y);
         const yNEl = g('ce_y_n'); if (yNEl) yNEl.value = Math.round(clip.y);
         renderFrame();
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-      };
+      const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
 
-    // ── Resize handles: adjust crop + scale ──
+    // ── Resize handles ──
+    // • Corner (nw/ne/sw/se) → uniform scale (lock aspect ratio)
+    // • Left/Right (w/e)     → horizontal stretch only (scaleX)
+    // • Top/Bottom (n/s)     → vertical stretch only (scaleY)
     el.querySelectorAll('.vcrop-handle').forEach(handle => {
       handle.addEventListener('mousedown', e => {
         e.preventDefault(); e.stopPropagation();
         const dir = handle.dataset.dir;
-        const csScale = getCanvasScale();
+        const rect0 = g('mainCanvas').getBoundingClientRect();
+        const pxRatio = stageW / rect0.width;
         const startX = e.clientX, startY = e.clientY;
-        const startSc = clip.scale || 1;
-        const startScX = clip.scaleX ?? startSc;
-        const startScY = clip.scaleY ?? startSc;
-        const startOffX = clip.cropOffsetX ?? 0;
-        const startOffY = clip.cropOffsetY ?? 0;
-        // Starting canvas-space size of the video overlay
-        const startW = drawW * startScX;
-        const startH = drawH * startScY;
+        const startScX = clip.scaleX ?? clip.scale ?? 1;
+        const startScY = clip.scaleY ?? clip.scale ?? 1;
+        const startW = baseW * startScX;
+        const startH = baseH * startScY;
+
+        const isCorner = (dir === 'nw' || dir === 'ne' || dir === 'sw' || dir === 'se');
+        const isHonly  = (dir === 'w'  || dir === 'e');
+        const isVonly  = (dir === 'n'  || dir === 's');
 
         const onMove = me => {
-          // Delta in canvas pixels
-          let dx = (me.clientX - startX) * csScale;
-          let dy = (me.clientY - startY) * csScale;
+          const dx = (me.clientX - startX) * pxRatio;
+          const dy = (me.clientY - startY) * pxRatio;
 
-          // Independent axis scaling: X handles change scaleX, Y handles change scaleY
-          // Corner handles change both axes independently
-          let newScX = clip.scaleX ?? startSc;
-          let newScY = clip.scaleY ?? startSc;
+          let newScX = startScX, newScY = startScY;
 
-          if (dir.includes('e') || dir.includes('w')) {
-            const sign = dir.includes('w') ? -1 : 1;
-            const newW = Math.max(stageW * 0.1, startW + sign * dx);
-            newScX = Math.max(0.05, Math.min(5, newW / drawW));
-          }
-          if (dir.includes('s') || dir.includes('n')) {
-            const sign = dir.includes('n') ? -1 : 1;
-            const newH = Math.max(stageH * 0.1, startH + sign * dy);
-            newScY = Math.max(0.05, Math.min(5, newH / drawH));
+          if (isCorner) {
+            // Uniform scale: use whichever axis dragged further
+            const signX = (dir.includes('e')) ? 1 : -1;
+            const signY = (dir.includes('s')) ? 1 : -1;
+            const dw = signX * dx, dh = signY * dy;
+            // Pick dominant delta for uniform scaling
+            const dominant = Math.abs(dw / startW) > Math.abs(dh / startH) ? dw / startW : dh / startH;
+            const newSc = Math.max(0.05, Math.min(5, startScX + dominant));
+            newScX = newSc; newScY = newSc * (startScY / startScX);
+          } else if (isHonly) {
+            // Horizontal only
+            const sign = dir === 'e' ? 1 : -1;
+            const newW = Math.max(stageW * 0.05, startW + sign * dx);
+            newScX = Math.max(0.05, Math.min(5, newW / baseW));
+          } else if (isVonly) {
+            // Vertical only
+            const sign = dir === 's' ? 1 : -1;
+            const newH = Math.max(stageH * 0.05, startH + sign * dy);
+            newScY = Math.max(0.05, Math.min(5, newH / baseH));
           }
 
           clip.scaleX = newScX;
           clip.scaleY = newScY;
-          // Keep legacy clip.scale in sync as the average for backward compat
-          clip.scale = (newScX + newScY) / 2;
+          clip.scale = (newScX + newScY) / 2; // keep legacy field in sync
 
-          // Nudge cropOffset to keep the anchored edge stable
-          const newOvX = (drawW * newScX) - stageW;
-          const newOvY = (drawH * newScY) - stageH;
+          syncEl();
 
-          if (dir.includes('w') && newOvX > 0) {
-            const oldPx = startOffX * (ovX > 0 ? ovX/2 : 1);
-            clip.cropOffsetX = Math.max(-1, Math.min(1, oldPx / (newOvX/2)));
-          }
-          if (dir.includes('n') && newOvY > 0) {
-            const oldPy = startOffY * (ovY > 0 ? ovY/2 : 1);
-            clip.cropOffsetY = Math.max(-1, Math.min(1, oldPy / (newOvY/2)));
-          }
-
-          // Update overlay element: compute new drawn size in canvas pixels
-          const newDrawW = drawW * newScX;
-          const newDrawH = drawH * newScY;
-          const newOvXFull = newDrawW - stageW;
-          const newOvYFull = newDrawH - stageH;
-          const cx2 = stageW / 2 + (clip.x || 0);
-          const cy2 = stageH / 2 + (clip.y || 0);
-          const offX2 = -(newOvXFull/2) + (clip.cropOffsetX ?? 0) * (newOvXFull/2);
-          const offY2 = -(newOvYFull/2) + (clip.cropOffsetY ?? 0) * (newOvYFull/2);
-          const rect2 = g('mainCanvas').getBoundingClientRect();
-          const cssScale2 = rect2.width > 0 ? rect2.width / stageW : 1;
-          el.style.left   = ((cx2 + offX2 - newDrawW/2) / stageW * rect2.width) + 'px';
-          el.style.top    = ((cy2 + offY2 - newDrawH/2) / stageH * rect2.height) + 'px';
-          el.style.width  = (newDrawW / stageW * rect2.width) + 'px';
-          el.style.height = (newDrawH / stageH * rect2.height) + 'px';
-
-          // Sync to clip editor panel if visible
+          // Sync panel sliders
           const scEl = g('ce_scale'); if (scEl) scEl.value = clip.scale;
           const scNEl = g('ce_scale_n'); if (scNEl) scNEl.value = clip.scale.toFixed(2);
-          const cxEl = g('ce_cropX'); if (cxEl) cxEl.value = clip.cropOffsetX;
-          const cxNEl = g('ce_cropX_n'); if (cxNEl) cxNEl.value = clip.cropOffsetX.toFixed(2);
-          const cyEl = g('ce_cropY'); if (cyEl) cyEl.value = clip.cropOffsetY;
-          const cyNEl = g('ce_cropY_n'); if (cyNEl) cyNEl.value = clip.cropOffsetY.toFixed(2);
 
-          label.textContent = `${clip.title||'视频'} ${newScX.toFixed(2)}×${newScY.toFixed(2)}`;
+          label.textContent = isCorner
+            ? `${clip.title||'视频'} ×${newScX.toFixed(2)}`
+            : `${clip.title||'视频'} ${newScX.toFixed(2)}×${newScY.toFixed(2)}`;
           renderFrame();
         };
-        const onUp = () => {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
-        };
+        const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
       });
