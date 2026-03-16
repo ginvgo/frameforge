@@ -588,7 +588,7 @@ textarea:focus { border-color: var(--accent); }
 .guide-v-third-2 { top: 0; bottom: 0; left: 66.66%; width: 1px; border-left: 1px dashed rgba(245,166,35,0.5); }
 
 /* ── VIDEO CROP/PAN LAYER (Feature 2) ── */
-#videoCropLayer { position: absolute; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; }
+#videoCropLayer { position: absolute; inset: 0; z-index: 40; pointer-events: none; overflow: visible; }
 .vcrop-el {
   position: absolute; pointer-events: all; cursor: move;
   border: 2px dashed rgba(91,110,245,0.8); box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
@@ -1784,7 +1784,7 @@ const drawVideoClip = (targetCtx, clip, v, W, H, animOverride) => {
   const cx = W/2 + (clip.x||0) + anim.tx;
   const cy = H/2 + (clip.y||0) + anim.ty;
   targetCtx.translate(cx, cy);
-  targetCtx.scale((clip.scale||1)*anim.scX, (clip.scale||1)*anim.scY);
+  targetCtx.scale((clip.scaleX ?? clip.scale ?? 1)*anim.scX, (clip.scaleY ?? clip.scale ?? 1)*anim.scY);
   if (anim.rot) targetCtx.rotate(anim.rot * Math.PI / 180);
   const sAR = W/H, vAR = vw/vh;
   let dw, dh;
@@ -2515,6 +2515,8 @@ const seekTo = (t) => {
   renderFrame();
   updatePlayhead();
   updateTimeDisplay();
+  // Notify crop mode to rebuild handles for new time position
+  if (S.cropMode) document.dispatchEvent(new Event('cropmode-refresh'));
 };
 
 const totalDuration = () => {
@@ -4713,7 +4715,7 @@ document.addEventListener('DOMContentLoaded', () => {
       qsa('.cap-align-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       S.capStyle.textAlign = btn.dataset.align;
-      renderFrame();
+      liveCapStyle();
     });
   });
 
@@ -5087,6 +5089,41 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   loadCustomFonts();
 
+  // ── Auto-load BGM from ./BGM/manifest.json (same pattern as custom fonts) ──
+  // Place a manifest.json in ./BGM/ with format: [{"name":"Track 1","file":"track1.mp3"}, ...]
+  const loadBgmFromManifest = async () => {
+    try {
+      const resp = await fetch('./BGM/manifest.json');
+      if (!resp.ok) return;
+      const manifest = await resp.json(); // [{name, file}]
+      if (!Array.isArray(manifest) || !manifest.length) return;
+
+      stopBgmPreview();
+      S.bgmFiles.forEach(f => { if (f.url?.startsWith('blob:')) URL.revokeObjectURL(f.url); });
+      S.bgmFiles = []; S.bgmSelected.clear();
+
+      for (const entry of manifest) {
+        if (!entry.file) continue;
+        const url = `./BGM/${entry.file}`;
+        const name = entry.name || entry.file.replace(/\.[^.]+$/, '');
+        const entry2 = { name: entry.file, url, duration: 0, file: null };
+        const probe = new Audio(url);
+        probe.addEventListener('loadedmetadata', () => {
+          entry2.duration = probe.duration || 0;
+          renderBgmLibrary();
+        }, { once: true });
+        probe.load();
+        S.bgmFiles.push(entry2);
+      }
+
+      renderBgmLibrary();
+      const autoNote = g('bgmAutoNote');
+      if (autoNote) { autoNote.style.display = ''; autoNote.textContent = `✓ 已自动加载 BGM 文件夹 (${manifest.length} 首)`; }
+      toast(`已自动加载 ${manifest.length} 个 BGM`, 'success', 3000);
+    } catch (_) { /* no manifest — BGM/manifest.json not found, that's fine */ }
+  };
+  loadBgmFromManifest();
+
   // Font file input picker (manual load)
   const fontPickBtn = document.createElement('button');
   fontPickBtn.className = 'btn-ghost';
@@ -5245,8 +5282,16 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.classList.toggle('crop-active', cropModeActive);
     btn.textContent = cropModeActive ? '✓ 完成' : '✂ 裁剪';
     vcropLayer.style.pointerEvents = cropModeActive ? 'all' : 'none';
-    if (cropModeActive) buildCropHandles();
-    else { vcropLayer.innerHTML = ''; }
+    // Elevate above caption layer during crop mode
+    vcropLayer.style.zIndex = cropModeActive ? '60' : '40';
+    if (cropModeActive) {
+      buildCropHandles();
+      // Disable canvas click-to-select while crop mode is active
+      g('mainCanvas').style.pointerEvents = 'none';
+    } else {
+      vcropLayer.innerHTML = '';
+      g('mainCanvas').style.pointerEvents = '';
+    }
   };
 
   // Build crop handles for all current clips visible at current time
@@ -5257,7 +5302,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const realLen = c.len / (c.speed||1);
       return (t >= c.startTime && t < c.startTime + realLen) || (t <= 0.01 && c.startTime === 0);
     });
-    clipsNow.forEach(clip => createCropHandle(clip));
+    // If nothing visible, show all clips (so user can always access handles)
+    const targets = clipsNow.length > 0 ? clipsNow : S.videoClips.slice(0, 1);
+    targets.forEach(clip => createCropHandle(clip));
   };
 
   const createCropHandle = (clip) => {
@@ -5267,7 +5314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoAR = vw / vh;
     const stageAR = stageW / stageH;
 
-    // Compute the visual size of the video drawn on canvas
+    // Compute the drawn video size in canvas pixels
     let drawW, drawH;
     if (videoAR > stageAR) { drawH = stageH; drawW = stageH * videoAR; }
     else { drawW = stageW; drawH = stageW / videoAR; }
@@ -5275,25 +5322,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const ovX = drawW - stageW;
     const ovY = drawH - stageH;
 
-    // Current position on screen (center of canvas stage)
-    const cx = stageW / 2 + (clip.x || 0);
-    const cy = stageH / 2 + (clip.y || 0);
-    const sc = clip.scale || 1;
-
-    // The drawn video rect in stage coords
-    const offX = -(ovX/2) + (clip.cropOffsetX??0)*(ovX/2);
-    const offY = -(ovY/2) + (clip.cropOffsetY??0)*(ovY/2);
-
-    // Visual rect of video relative to stage (top-left corner)
-    const vidLeft = cx + (offX - stageW/2) * sc;
-    const vidTop  = cy + (offY - stageH/2) * sc;
-    const vidW    = drawW * sc;
-    const vidH    = drawH * sc;
+    // Recompute element position from current clip state (CSS pixels relative to previewStage)
+    const getElPos = () => {
+      const scX = clip.scaleX ?? clip.scale ?? 1;
+      const scY = clip.scaleY ?? clip.scale ?? 1;
+      const curDrawW = drawW * scX;
+      const curDrawH = drawH * scY;
+      const curOvX = curDrawW - stageW;
+      const curOvY = curDrawH - stageH;
+      const cx = stageW / 2 + (clip.x || 0);
+      const cy = stageH / 2 + (clip.y || 0);
+      const offX = -(curOvX/2) + (clip.cropOffsetX ?? 0) * (curOvX/2);
+      const offY = -(curOvY/2) + (clip.cropOffsetY ?? 0) * (curOvY/2);
+      const rect = g('mainCanvas').getBoundingClientRect();
+      const cssScaleX = rect.width > 0 ? rect.width / stageW : 1;
+      const cssScaleY = rect.height > 0 ? rect.height / stageH : 1;
+      return {
+        left: (cx + offX - curDrawW/2) * cssScaleX,
+        top:  (cy + offY - curDrawH/2) * cssScaleY,
+        w:    curDrawW * cssScaleX,
+        h:    curDrawH * cssScaleY,
+      };
+    };
 
     const el = document.createElement('div');
     el.className = 'vcrop-el vcrop-active';
     el.id = 'vcrop_' + clip.id;
-    el.style.cssText = `left:${vidLeft}px;top:${vidTop}px;width:${vidW}px;height:${vidH}px;`;
+    const pos = getElPos();
+    el.style.cssText = `left:${pos.left}px;top:${pos.top}px;width:${pos.w}px;height:${pos.h}px;`;
 
     const label = document.createElement('div');
     label.className = 'vcrop-label';
@@ -5308,29 +5364,49 @@ document.addEventListener('DOMContentLoaded', () => {
       el.appendChild(h);
     });
 
-    // Drag to pan (move crop offset)
-    let dragStartX, dragStartY, startOffX, startOffY;
+    // Helper: get the CSS-to-canvas pixel scale ratio
+    const getCanvasScale = () => {
+      const rect = g('mainCanvas').getBoundingClientRect();
+      return rect.width > 0 ? stageW / rect.width : 1;
+    };
+
+    // ── Drag to move freely (updates clip.x / clip.y position) ──
     el.addEventListener('mousedown', e => {
       if (e.target.classList.contains('vcrop-handle')) return;
-      e.preventDefault();
-      dragStartX = e.clientX; dragStartY = e.clientY;
-      startOffX = clip.cropOffsetX ?? 0;
-      startOffY = clip.cropOffsetY ?? 0;
+      e.preventDefault(); e.stopPropagation();
+      const csScale = getCanvasScale();
+      const startMouseX = e.clientX, startMouseY = e.clientY;
+      const startClipX = clip.x || 0;
+      const startClipY = clip.y || 0;
+
       const onMove = me => {
-        const dx = me.clientX - dragStartX;
-        const dy = me.clientY - dragStartY;
-        // Convert pixel drag to normalized offset (-1..1) within overflow range
-        const rangeX = ovX > 0 ? ovX / 2 : 1;
-        const rangeY = ovY > 0 ? ovY / 2 : 1;
-        clip.cropOffsetX = Math.max(-1, Math.min(1, startOffX + dx / rangeX));
-        clip.cropOffsetY = Math.max(-1, Math.min(1, startOffY + dy / rangeY));
-        // Move the visual handle element
-        const newOffX = -(ovX/2)+(clip.cropOffsetX??0)*(ovX/2);
-        const newOffY = -(ovY/2)+(clip.cropOffsetY??0)*(ovY/2);
-        el.style.left = (cx + (newOffX - stageW/2)*sc) + 'px';
-        el.style.top  = (cy + (newOffY - stageH/2)*sc) + 'px';
-        // Update label
-        label.textContent = `${clip.title||'视频'} [${Math.round(clip.cropOffsetX*100)}%, ${Math.round(clip.cropOffsetY*100)}%]`;
+        // Convert screen-pixel delta to canvas-pixel delta, then update clip position
+        const dx = (me.clientX - startMouseX) * csScale;
+        const dy = (me.clientY - startMouseY) * csScale;
+        clip.x = startClipX + dx;
+        clip.y = startClipY + dy;
+        // Reposition the overlay element to match
+        const rect2 = g('mainCanvas').getBoundingClientRect();
+        const cssScaleX = rect2.width > 0 ? rect2.width / stageW : 1;
+        const cssScaleY = rect2.height > 0 ? rect2.height / stageH : 1;
+        const curScX = clip.scaleX ?? clip.scale ?? 1;
+        const curScY = clip.scaleY ?? clip.scale ?? 1;
+        const curDrawW = drawW * curScX;
+        const curDrawH = drawH * curScY;
+        const curOvX = curDrawW - stageW;
+        const curOvY = curDrawH - stageH;
+        const offX = -(curOvX/2) + (clip.cropOffsetX ?? 0) * (curOvX/2);
+        const offY = -(curOvY/2) + (clip.cropOffsetY ?? 0) * (curOvY/2);
+        const cx2 = stageW / 2 + clip.x;
+        const cy2 = stageH / 2 + clip.y;
+        el.style.left = ((cx2 + offX - curDrawW/2) * cssScaleX) + 'px';
+        el.style.top  = ((cy2 + offY - curDrawH/2) * cssScaleY) + 'px';
+        label.textContent = `${clip.title||'视频'} [X:${Math.round(clip.x)}, Y:${Math.round(clip.y)}]`;
+        // Sync position fields
+        const xEl = g('ce_x'); if (xEl) xEl.value = Math.round(clip.x);
+        const xNEl = g('ce_x_n'); if (xNEl) xNEl.value = Math.round(clip.x);
+        const yEl = g('ce_y'); if (yEl) yEl.value = Math.round(clip.y);
+        const yNEl = g('ce_y_n'); if (yNEl) yNEl.value = Math.round(clip.y);
         renderFrame();
       };
       const onUp = () => {
@@ -5341,27 +5417,114 @@ document.addEventListener('DOMContentLoaded', () => {
       document.addEventListener('mouseup', onUp);
     });
 
+    // ── Resize handles: adjust crop + scale ──
+    el.querySelectorAll('.vcrop-handle').forEach(handle => {
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const dir = handle.dataset.dir;
+        const csScale = getCanvasScale();
+        const startX = e.clientX, startY = e.clientY;
+        const startSc = clip.scale || 1;
+        const startScX = clip.scaleX ?? startSc;
+        const startScY = clip.scaleY ?? startSc;
+        const startOffX = clip.cropOffsetX ?? 0;
+        const startOffY = clip.cropOffsetY ?? 0;
+        // Starting canvas-space size of the video overlay
+        const startW = drawW * startScX;
+        const startH = drawH * startScY;
+
+        const onMove = me => {
+          // Delta in canvas pixels
+          let dx = (me.clientX - startX) * csScale;
+          let dy = (me.clientY - startY) * csScale;
+
+          // Independent axis scaling: X handles change scaleX, Y handles change scaleY
+          // Corner handles change both axes independently
+          let newScX = clip.scaleX ?? startSc;
+          let newScY = clip.scaleY ?? startSc;
+
+          if (dir.includes('e') || dir.includes('w')) {
+            const sign = dir.includes('w') ? -1 : 1;
+            const newW = Math.max(stageW * 0.1, startW + sign * dx);
+            newScX = Math.max(0.05, Math.min(5, newW / drawW));
+          }
+          if (dir.includes('s') || dir.includes('n')) {
+            const sign = dir.includes('n') ? -1 : 1;
+            const newH = Math.max(stageH * 0.1, startH + sign * dy);
+            newScY = Math.max(0.05, Math.min(5, newH / drawH));
+          }
+
+          clip.scaleX = newScX;
+          clip.scaleY = newScY;
+          // Keep legacy clip.scale in sync as the average for backward compat
+          clip.scale = (newScX + newScY) / 2;
+
+          // Nudge cropOffset to keep the anchored edge stable
+          const newOvX = (drawW * newScX) - stageW;
+          const newOvY = (drawH * newScY) - stageH;
+
+          if (dir.includes('w') && newOvX > 0) {
+            const oldPx = startOffX * (ovX > 0 ? ovX/2 : 1);
+            clip.cropOffsetX = Math.max(-1, Math.min(1, oldPx / (newOvX/2)));
+          }
+          if (dir.includes('n') && newOvY > 0) {
+            const oldPy = startOffY * (ovY > 0 ? ovY/2 : 1);
+            clip.cropOffsetY = Math.max(-1, Math.min(1, oldPy / (newOvY/2)));
+          }
+
+          // Update overlay element: compute new drawn size in canvas pixels
+          const newDrawW = drawW * newScX;
+          const newDrawH = drawH * newScY;
+          const newOvXFull = newDrawW - stageW;
+          const newOvYFull = newDrawH - stageH;
+          const cx2 = stageW / 2 + (clip.x || 0);
+          const cy2 = stageH / 2 + (clip.y || 0);
+          const offX2 = -(newOvXFull/2) + (clip.cropOffsetX ?? 0) * (newOvXFull/2);
+          const offY2 = -(newOvYFull/2) + (clip.cropOffsetY ?? 0) * (newOvYFull/2);
+          const rect2 = g('mainCanvas').getBoundingClientRect();
+          const cssScale2 = rect2.width > 0 ? rect2.width / stageW : 1;
+          el.style.left   = ((cx2 + offX2 - newDrawW/2) / stageW * rect2.width) + 'px';
+          el.style.top    = ((cy2 + offY2 - newDrawH/2) / stageH * rect2.height) + 'px';
+          el.style.width  = (newDrawW / stageW * rect2.width) + 'px';
+          el.style.height = (newDrawH / stageH * rect2.height) + 'px';
+
+          // Sync to clip editor panel if visible
+          const scEl = g('ce_scale'); if (scEl) scEl.value = clip.scale;
+          const scNEl = g('ce_scale_n'); if (scNEl) scNEl.value = clip.scale.toFixed(2);
+          const cxEl = g('ce_cropX'); if (cxEl) cxEl.value = clip.cropOffsetX;
+          const cxNEl = g('ce_cropX_n'); if (cxNEl) cxNEl.value = clip.cropOffsetX.toFixed(2);
+          const cyEl = g('ce_cropY'); if (cyEl) cyEl.value = clip.cropOffsetY;
+          const cyNEl = g('ce_cropY_n'); if (cyNEl) cyNEl.value = clip.cropOffsetY.toFixed(2);
+
+          label.textContent = `${clip.title||'视频'} ${newScX.toFixed(2)}×${newScY.toFixed(2)}`;
+          renderFrame();
+        };
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+
     vcropLayer.appendChild(el);
   };
 
   g('cropModeBtn')?.addEventListener('click', toggleCropMode);
 
-  // When a video clip is selected in crop mode, rebuild handles
-  const origSelectVideoClip = selectVideoClip;
-
-  // Also rebuild handles on seek during crop mode
-  const origSeekTo = seekTo;
-
-  // Intercept render to rebuild crop handles when in crop mode
-  const origRenderFrame = renderFrame;
-
-  // Patch: after any seek in crop mode, rebuild handles
+  // Rebuild handles whenever seekTo is called during crop mode
+  // We patch seekTo to dispatch an event after seeking
+  // Redefine seekTo to fire cropmode-refresh after seeking
+  // Since seekTo is a const, we intercept via the event
   document.addEventListener('cropmode-refresh', () => {
     if (cropModeActive) buildCropHandles();
   });
 
-  // Add random crop offset when adding a new clip (Feature 2 bonus: random crop position)
-  const origAddVideoClip = addVideoClip;
+  // Also rebuild on window resize (stage resizes changes pixel positions)
+  window.addEventListener('resize', () => {
+    if (cropModeActive) setTimeout(buildCropHandles, 50);
+  });
 
   // ── FEATURE 3: EXPORT SPEED MODE ──
   const expModes = {
@@ -5389,9 +5552,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   renderTimeline();
   updateTimeDisplay();
+  autoLoadBgm();
 
   if (S.apiKey) setTimeout(() => toast('欢迎回来！输入关键词开始搜索', 'success'), 500);
-  console.log('FrameForge Studio v3 ready ✓');
+  console.log('FrameForge Studio v12 ready ✓');
 });
 </script>
 </body>
